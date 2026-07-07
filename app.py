@@ -163,11 +163,11 @@ if not st.session_state.started:
         "당신은 지금 **10개 종목**을 각 200만 원씩(총 2,000만 원) 보유하고 "
         "있습니다. 앞으로 **10주** 동안 매주 가격이 바뀝니다. "
         "**팔고 싶은 종목을 직접 고르세요.**\n\n"
-        "- 종목 정체는 검사가 끝나면 공개됩니다(블라인드).\n"
-        "- 당신의 매매 기록으로 **5대 투자심리 편향**을 진단하고, "
-        "**맞춤 솔루션**과 개인 리포트를 드립니다.\n\n"
-        "> 5종목은 횡보(박스권), 5종목은 상승추세에서 가져왔습니다. "
-        "어느 게 어느 쪽인지는 비밀입니다.")
+        "- 어떤 종목인지는 검사가 끝나면 공개됩니다(이름을 가린 채 진행).\n"
+        "- 당신의 매매 기록으로 **나의 5가지 매매 습관**을 진단하고, "
+        "**맞춤 처방**과 개인 리포트를 드립니다.\n\n"
+        "> 5종목은 오르내림만 반복하던 장, 5종목은 쭉 오르던 장에서 "
+        "가져왔습니다. 어느 게 어느 쪽인지는 비밀입니다.")
     if st.button("검사 시작 ▶", type="primary"):
         st.session_state.started = True
         st.rerun()
@@ -213,11 +213,14 @@ else:
 
     rp = radar_png(prof["traits"])
     cL, cR = st.columns([1, 1])
-    cL.image(rp, caption="5대 행동편향 (0~100, 높을수록 심함)")
+    cL.image(rp, caption="나의 5가지 매매 습관 (0~100, 높을수록 강함)")
     with cR:
         for k, v in prof["traits"].items():
             st.write(f"**{k}** — {v:.0f}점")
             st.progress(v / 100)
+            desc = P.TRAIT_DESC.get(k)
+            if desc:
+                st.caption(desc)
 
     # 성과 비교
     user_final, inv = P.equity_of(tdf, PRICES, DATES, QTY)
@@ -226,18 +229,22 @@ else:
     up = lambda f: (f / inv - 1) * 100
     st.subheader("📈 성과 비교 (같은 시장, 다른 습관)")
     st.table(pd.DataFrame({
-        "전략": ["당신의 매매", "그냥 보유(무편향)", "손절 규율(-10%)"],
+        "이렇게 했다면": ["내가 실제로 한 매매", "그냥 끝까지 보유",
+                    "−10%면 손절 규칙"],
         "수익률": [f"{up(user_final):+.1f}%", f"{up(bh_final):+.1f}%",
                 f"{up(dc_final):+.1f}%"],
     }))
     missed = None
     if up(bh_final) - up(user_final) > 1:
         missed = (f"그냥 들고만 있었어도 {up(bh_final):+.1f}%였습니다. "
-                  f"매매로 {up(bh_final)-up(user_final):.1f}%p를 깎아먹었습니다.")
+                  f"매매하느라 {up(bh_final)-up(user_final):.1f}%포인트를 "
+                  f"깎아먹었습니다.")
         st.warning(missed)
 
     # 전략 프로필 + Shadow Backtesting
-    st.subheader("🕶️ Shadow Backtesting (규칙 준수 점검)")
+    st.subheader("🕶️ 규칙대로 했다면? (내 매매 vs 규칙 매매 비교)")
+    st.caption("미리 정한 매매 규칙(손절·목표가격 등)을 그대로 지켰다면 어땠을지 "
+               "가상으로 비교해 보는 코너입니다.")
     inferred = SB.infer_strategy_profile(tdf, PRICES, DATES)
     rec = recommended_shadow_params(inferred["style"])
 
@@ -269,28 +276,43 @@ else:
         st.session_state.shadow_trend_tr = rec["t_tr"]
         st.rerun()
     cset2.caption(
-        f"추천(스타일={inferred['style']}) · SL {rec['stop_loss']}% / TP {rec['take_profit']}% / TR {rec['trailing']}%"
+        f"추천(스타일={inferred['style']}) · 손절 {rec['stop_loss']}% / "
+        f"목표가격 {rec['take_profit']}% / 고점대비하락 {rec['trailing']}%"
     )
 
-    with st.expander("Shadow 규칙 설정", expanded=False):
-        stop_loss = st.slider("손절 규칙 (%)", 3, 30, 10, key="shadow_stop_loss") / 100
-        take_profit = st.slider("익절 규칙 (%)", 5, 60, 25, key="shadow_take_profit") / 100
-        trailing = st.slider("트레일링 손절 (%)", 3, 30, 8, key="shadow_trailing") / 100
-        min_hold = st.slider("최소 보유(주)", 1, max(1, N), 1, key="shadow_min_hold")
-        use_regime_rules = st.checkbox("국면별 규칙 분리 적용(박스/추세)", key="shadow_use_regime_rules")
+    with st.expander("매매 규칙 직접 바꿔보기 (고급)", expanded=False):
+        stop_loss = st.slider(
+            "손절 규칙 (%): 이만큼 떨어지면 판다",
+            3, 30, 10, key="shadow_stop_loss") / 100
+        take_profit = st.slider(
+            "목표가격 규칙 (%): 이만큼 오르면 판다",
+            5, 60, 25, key="shadow_take_profit") / 100
+        trailing = st.slider(
+            "고점 대비 하락 매도 (%): 가장 높았던 값에서 이만큼 빠지면 판다",
+            3, 30, 8, key="shadow_trailing") / 100
+        min_hold = st.slider("최소 보유(주)", 1, max(1, N), 1,
+                             key="shadow_min_hold")
+        use_regime_rules = st.checkbox(
+            "상황별 규칙 나누기 (지지부진한 장 / 오르는 장)",
+            key="shadow_use_regime_rules")
 
         box_profile = None
         trend_profile = None
         if use_regime_rules:
-            st.caption("박스권 종목 규칙")
-            b_sl = st.slider("박스 손절 (%)", 3, 30, 8, key="shadow_box_sl") / 100
-            b_tp = st.slider("박스 익절 (%)", 5, 60, 18, key="shadow_box_tp") / 100
-            b_tr = st.slider("박스 트레일링 (%)", 3, 30, 6, key="shadow_box_tr") / 100
+            st.caption("지지부진한 장(박스권) 종목 규칙")
+            b_sl = st.slider("손절 (%)", 3, 30, 8, key="shadow_box_sl") / 100
+            b_tp = st.slider("목표가격 (%)", 5, 60, 18,
+                             key="shadow_box_tp") / 100
+            b_tr = st.slider("고점 대비 하락 매도 (%)", 3, 30, 6,
+                             key="shadow_box_tr") / 100
 
-            st.caption("추세장 종목 규칙")
-            t_sl = st.slider("추세 손절 (%)", 3, 30, 12, key="shadow_trend_sl") / 100
-            t_tp = st.slider("추세 익절 (%)", 5, 60, 35, key="shadow_trend_tp") / 100
-            t_tr = st.slider("추세 트레일링 (%)", 3, 30, 10, key="shadow_trend_tr") / 100
+            st.caption("오르는 장(상승장) 종목 규칙")
+            t_sl = st.slider("손절 (%) ", 3, 30, 12,
+                             key="shadow_trend_sl") / 100
+            t_tp = st.slider("목표가격 (%) ", 5, 60, 35,
+                             key="shadow_trend_tp") / 100
+            t_tr = st.slider("고점 대비 하락 매도 (%) ", 3, 30, 10,
+                             key="shadow_trend_tr") / 100
 
             box_profile = SB.StrategyProfile(
                 stop_loss_pct=b_sl,
@@ -327,33 +349,50 @@ else:
     )
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("규칙 준수율", f"{shadow['summary']['rule_adherence_pct']:.1f}%")
-    c2.metric("위반 건수", f"{shadow['summary']['n_violations']}건")
-    c3.metric("기회비용 합계", f"{shadow['summary']['total_opportunity_cost_pct']:+.1f}%p")
+    c1.metric("규칙 지킨 비율", f"{shadow['summary']['rule_adherence_pct']:.1f}%")
+    c2.metric("규칙 어긴 횟수", f"{shadow['summary']['n_violations']}건")
+    c3.metric("놓친 수익 합계",
+              f"{shadow['summary']['total_opportunity_cost_pct']:+.1f}%포인트")
 
     st.caption(
-        "추정 전략 프로필 · "
-        f"스타일 {inferred['style']} · "
-        f"추정 익절 {((inferred['inferred_take_profit_pct'] or 0) * 100):.1f}% · "
-        f"추정 손절 {((inferred['inferred_stop_loss_pct'] or 0) * 100):.1f}%"
+        "내 매매에서 추정한 스타일 · "
+        f"{inferred['style']} · "
+        f"목표가격 약 {((inferred['inferred_take_profit_pct'] or 0) * 100):.1f}% · "
+        f"손절 약 {((inferred['inferred_stop_loss_pct'] or 0) * 100):.1f}%"
     )
 
     if not shadow["events"].empty:
-        st.write("규칙 위반/감정 매매 의심 지점")
+        st.write("규칙을 어겼거나 감정 매매가 의심되는 지점")
         cols = [
             "ticker", "regime", "issue_label", "severity",
             "actual_exit_date", "shadow_exit_date",
             "delay_steps", "actual_return_pct", "shadow_return_pct",
             "opportunity_cost_pct", "narrative", "psychology_hint", "action_hint",
         ]
-        st.dataframe(shadow["events"][cols].sort_values("opportunity_cost_pct", ascending=False),
-                     use_container_width=True)
+        ev = shadow["events"][cols].sort_values(
+            "opportunity_cost_pct", ascending=False).copy()
+        ev["regime"] = ev["regime"].map(
+            {"box": "지지부진", "trend": "상승장", "all": "전체"}).fillna(ev["regime"])
+        ev["severity"] = ev["severity"].map(
+            {"low": "낮음", "medium": "중간", "high": "높음"}).fillna(ev["severity"])
+        ev["issue_label"] = ev["issue_label"].map(
+            {"조기 익절": "너무 일찍 팜", "지연 손절": "손절 늦음",
+             "손절 미이행": "손절 안 함"}).fillna(ev["issue_label"])
+        ev = ev.rename(columns={
+            "ticker": "종목", "regime": "장 성격", "issue_label": "문제 유형",
+            "severity": "심각도", "actual_exit_date": "실제로 판 날",
+            "shadow_exit_date": "규칙대로 팔 날", "delay_steps": "차이(주)",
+            "actual_return_pct": "실제 수익률", "shadow_return_pct": "규칙 수익률",
+            "opportunity_cost_pct": "놓친 수익", "narrative": "설명",
+            "psychology_hint": "심리 힌트", "action_hint": "실천 힌트",
+        })
+        st.dataframe(ev, use_container_width=True)
     else:
-        st.success("Shadow 규칙 기준으로 뚜렷한 위반 지점이 발견되지 않았습니다.")
+        st.success("정한 규칙과 크게 어긋난 매매가 발견되지 않았습니다.")
 
-    # 실제 vs Shadow 청산 타임라인
+    # 실제로 판 시점 vs 규칙대로 팔 시점 비교
     if not shadow["comparison"].empty:
-        st.write("실제 청산 vs Shadow 청산 타임라인")
+        st.write("실제로 판 시점 vs 규칙대로 팔 시점 비교")
         ticker_pick = st.selectbox("종목 선택", shadow["comparison"]["ticker"].tolist(), key="shadow_timeline_ticker")
         row = shadow["comparison"][shadow["comparison"]["ticker"] == ticker_pick].iloc[0]
 
@@ -370,22 +409,24 @@ else:
         actual_y = float(PRICES.loc[x_dates.index(actual_d), ticker_pick]) if actual_d in x_dates else y[-1]
         shadow_y = float(PRICES.loc[x_dates.index(shadow_d), ticker_pick]) if shadow_d in x_dates else y[-1]
 
-        ax.scatter([entry_d], [entry_y], color="#2E86C1", s=70, marker="o", label="진입")
-        ax.scatter([actual_d], [actual_y], color="#C0392B", s=85, marker="X", label="실제 청산")
-        ax.scatter([shadow_d], [shadow_y], color="#117A65", s=85, marker="D", label="Shadow 청산")
-        ax.set_title(f"{ticker_pick} 청산 타이밍 비교", fontsize=12)
+        ax.scatter([entry_d], [entry_y], color="#2E86C1", s=70, marker="o", label="산 시점")
+        ax.scatter([actual_d], [actual_y], color="#C0392B", s=85, marker="X", label="실제로 판 시점")
+        ax.scatter([shadow_d], [shadow_y], color="#117A65", s=85, marker="D", label="규칙대로 팔 시점")
+        ax.set_title(f"{ticker_pick} 판 시점 비교", fontsize=12)
         ax.grid(alpha=0.3)
         ax.legend(fontsize=9)
         fig.tight_layout()
         st.pyplot(fig, use_container_width=True)
         plt.close(fig)
 
-    # 국면별 처분효과
-    st.subheader("🧪 국면별 처분효과 (PGR−PLR)")
+    # 상황별 '오른 건 팔고 내린 건 버티기' 정도
+    st.subheader("🧪 상황별 '오른 건 팔고 내린 건 버티기' 정도")
+    st.caption("숫자가 +로 클수록 '오른 건 서둘러 팔고, 내린 건 계속 버틴' 정도가 "
+               "강합니다. 0에 가까울수록 균형 잡힌 매매입니다.")
     def fmt(x):
-        return "측정불가" if x is None else f"{x*100:+.0f}%p"
-    st.write(f"- 박스권(2014–15): **{fmt(prof['de_box'])}** · "
-             f"추세장(2020–21): **{fmt(prof['de_trend'])}** · "
+        return "측정 불가" if x is None else f"{x*100:+.0f}"
+    st.write(f"- 지지부진하던 장(2014–15): **{fmt(prof['de_box'])}** · "
+             f"쭉 오르던 장(2020–21): **{fmt(prof['de_trend'])}** · "
              f"전체: **{fmt(prof['de_all'])}**")
 
     # 정체 공개
@@ -395,24 +436,24 @@ else:
     for _, m in META.iterrows():
         lab = m["label"]
         fin_pct = PRICES.loc[N, lab] / ENTRY[lab] * 100 - 100
-        tag = "📦박스" if m["regime"] == "box" else "📈추세"
-        reveal_rows.append({"라벨": lab, "종목": m["name"], "국면": tag,
+        tag = "📦지지부진(박스권)" if m["regime"] == "box" else "📈상승장"
+        reveal_rows.append({"라벨": lab, "종목": m["name"], "장 성격": tag,
                             "기간": m["period"], "최종": f"{fin_pct:+.1f}%"})
         rev_lines.append(f"{lab} = {m['name']} ({tag} {m['period']}, "
                          f"{fin_pct:+.1f}%)")
     st.table(pd.DataFrame(reveal_rows))
 
     # 솔루션
-    st.subheader("💡 당신을 위한 솔루션")
+    st.subheader("💡 나를 위한 맞춤 처방")
     sols = P.solution_for(prof)
     for s in sols:
         st.markdown(f"- {s}")
 
     # docx
     extras = {
-        "pnl_table": [("당신의 매매", up(user_final)),
-                      ("그냥 보유(무편향)", up(bh_final)),
-                      ("손절 규율(-10%)", up(dc_final))],
+        "pnl_table": [("내가 실제로 한 매매", up(user_final)),
+                      ("그냥 끝까지 보유", up(bh_final)),
+                      ("−10%면 손절 규칙", up(dc_final))],
         "missed_note": missed,
         "reveal": rev_lines,
         "solutions": sols,

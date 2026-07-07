@@ -49,25 +49,27 @@ def make_docx(prof: dict, extras: dict, radar_png: bytes | None = None) -> bytes
     _p(doc, f"매매 {prof['n_sells']}회 · 평균 보유 {prof['avg_hold']:.1f}주", size=10,
        color=GRAY)
 
-    # 5대 편향
-    _p(doc, "■ 5대 행동편향 점수 (0=없음 … 100=심함)", size=13, bold=True,
+    # 5가지 매매 습관
+    _p(doc, "■ 나의 5가지 매매 습관 점수 (0=없음 … 100=강함)", size=13, bold=True,
        color=NAVY, after=4)
     for k, v in prof["traits"].items():
         bar = "█" * round(v / 10) + "░" * (10 - round(v / 10))
-        _p(doc, f"  {k:<7} {bar}  {v:.0f}", size=10.5, after=1)
+        _p(doc, f"  {k:<9} {bar}  {v:.0f}", size=10.5, after=1)
 
     if radar_png:
         doc.add_picture(BytesIO(radar_png))
         doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # 국면별 처분효과
-    _p(doc, "■ 국면별 처분효과 (PGR−PLR, 클수록 '오른 건 팔고 내린 건 보유')",
+    # 상황별 '오른 건 팔고 내린 건 버티기' 정도
+    _p(doc, "■ 상황별 '오른 건 팔고 내린 건 버티기' 정도 (+로 클수록 습관 강함)",
        size=13, bold=True, color=NAVY, after=4)
     def fmt(x):
-        return "측정불가" if x is None else f"{x*100:+.0f}%p"
-    _p(doc, f"  · 박스권(2014–15) : {fmt(prof['de_box'])}", size=10.5, after=1)
-    _p(doc, f"  · 추세장(2020–21) : {fmt(prof['de_trend'])}", size=10.5, after=1)
-    _p(doc, f"  · 전체            : {fmt(prof['de_all'])}", size=10.5)
+        return "측정 불가" if x is None else f"{x*100:+.0f}"
+    _p(doc, f"  · 지지부진하던 장(2014–15) : {fmt(prof['de_box'])}",
+       size=10.5, after=1)
+    _p(doc, f"  · 쭉 오르던 장(2020–21)   : {fmt(prof['de_trend'])}",
+       size=10.5, after=1)
+    _p(doc, f"  · 전체                    : {fmt(prof['de_all'])}", size=10.5)
 
     # 손익 비교
     _p(doc, "■ 성과 비교 (같은 시장, 다른 습관)", size=13, bold=True, color=NAVY,
@@ -82,8 +84,8 @@ def make_docx(prof: dict, extras: dict, radar_png: bytes | None = None) -> bytes
     for row in extras["reveal"]:
         _p(doc, f"  {row}", size=10, after=1)
 
-    # 솔루션
-    _p(doc, "■ 당신을 위한 솔루션", size=13, bold=True, color=NAVY, after=4)
+    # 맞춤 처방
+    _p(doc, "■ 나를 위한 맞춤 처방", size=13, bold=True, color=NAVY, after=4)
     for s in extras["solutions"]:
         _p(doc, f"  • {s}", size=10.5, after=3)
 
@@ -92,15 +94,23 @@ def make_docx(prof: dict, extras: dict, radar_png: bytes | None = None) -> bytes
         sh = extras["shadow"]
         inf = sh.get("inferred", {})
         summ = sh.get("summary", {})
-        _p(doc, "■ Shadow Backtesting 요약", size=13, bold=True, color=NAVY,
-           after=4)
-        _p(doc, f"  · 추정 전략 스타일: {inf.get('style', 'n/a')}", size=10.5, after=1)
-        _p(doc, f"  · 규칙 준수율: {summ.get('rule_adherence_pct', 0):.1f}%", size=10.5, after=1)
-        _p(doc, f"  · 위반 건수: {summ.get('n_violations', 0)}건", size=10.5, after=1)
-        _p(doc, f"  · 조기 익절: {summ.get('early_profit_take_count', 0)}건", size=10.5, after=1)
-        _p(doc, f"  · 지연 손절: {summ.get('delayed_stop_loss_count', 0)}건", size=10.5, after=1)
-        _p(doc, f"  · 손절 미이행: {summ.get('no_stop_loss_execution_count', 0)}건", size=10.5, after=1)
-        _p(doc, f"  · 기회비용 합계: {summ.get('total_opportunity_cost_pct', 0):+.1f}%p", size=10.5)
+        _p(doc, "■ 규칙대로 했다면? (내 매매 vs 규칙 매매)", size=13, bold=True,
+           color=NAVY, after=4)
+        _p(doc, f"  · 추정 매매 스타일: {inf.get('style', 'n/a')}",
+           size=10.5, after=1)
+        _p(doc, f"  · 규칙 지킨 비율: {summ.get('rule_adherence_pct', 0):.1f}%",
+           size=10.5, after=1)
+        _p(doc, f"  · 규칙 어긴 횟수: {summ.get('n_violations', 0)}건",
+           size=10.5, after=1)
+        _p(doc, f"  · 너무 일찍 판 횟수: "
+           f"{summ.get('early_profit_take_count', 0)}건", size=10.5, after=1)
+        _p(doc, f"  · 손절 늦은 횟수: "
+           f"{summ.get('delayed_stop_loss_count', 0)}건", size=10.5, after=1)
+        _p(doc, f"  · 손절 안 한 횟수: "
+           f"{summ.get('no_stop_loss_execution_count', 0)}건",
+           size=10.5, after=1)
+        _p(doc, f"  · 놓친 수익 합계: "
+           f"{summ.get('total_opportunity_cost_pct', 0):+.1f}%포인트", size=10.5)
 
     _p(doc, "본 진단은 단일 검사(10종목) 기반의 성향 지표이며, 정밀 측정이 "
             "아닙니다. 투자 권유가 아니며 판단과 책임은 본인에게 있습니다.",

@@ -105,26 +105,26 @@ def profile(trades: pd.DataFrame, prices: pd.DataFrame, meta: pd.DataFrame,
     anchoring = _clip100(100 * breakeven_cnt / n_sells) if n_sells else 0.0
 
     traits = {
-        "처분효과": disposition,
-        "추세 놓침": counter_trend,
-        "패닉 매도": panic,
-        "과잉 매매": overtrade,
+        "성급한 익절": disposition,
+        "상승주 조기매도": counter_trend,
+        "공포 매도": panic,
+        "잦은 매매": overtrade,
         "본전 집착": anchoring,
     }
 
-    # ── 종합 유형 ──
+    # ── 종합 유형 (쉬운 말) ──
     TYPE = {
-        "처분효과": "성급한 익절·손실 외면형",
-        "추세 놓침": "추세 놓침형(승자 조기청산)",
-        "패닉 매도": "패닉 매도형",
-        "과잉 매매": "과잉 매매형",
-        "본전 집착": "본전 집착형",
+        "성급한 익절": "오른 건 서둘러 팔고, 내린 건 버티는 형",
+        "상승주 조기매도": "오를 종목을 너무 일찍 파는 형",
+        "공포 매도": "겁나면 던지는 형",
+        "잦은 매매": "짧게 자주 사고파는 형",
+        "본전 집착": "본전 회복만 기다리는 형",
     }
     if n_sells == 0:
-        ptype = "완전 보유형(관망)"
+        ptype = "끝까지 보유형 (한 번도 안 팜)"
         dom = None
     elif max(traits.values()) < 25:
-        ptype = "균형 잡힌 규율형"
+        ptype = "균형 잡힌 규율형 (뚜렷한 나쁜 습관 없음)"
         dom = max(traits, key=traits.get)
     else:
         dom = max(traits, key=traits.get)
@@ -137,6 +137,17 @@ def profile(trades: pd.DataFrame, prices: pd.DataFrame, meta: pd.DataFrame,
         "n_sells": n_sells,
         "de_all": de_all, "de_box": de_box, "de_trend": de_trend,
         "avg_hold": avg_hold,
+        # 개인화 솔루션 근거로 쓰는 상세 카운트
+        "detail": {
+            "n_sells": n_sells,
+            "panic_cnt": panic_cnt,
+            "breakeven_cnt": breakeven_cnt,
+            "trend_sold_in_gain": trend_sold_in_gain,
+            "n_trend": len(trend_labels),
+            "avg_hold": avg_hold,
+            "n_steps": n_steps,
+            "de_all": de_all, "de_box": de_box, "de_trend": de_trend,
+        },
     }
 
 
@@ -156,30 +167,81 @@ def equity_of(trades, prices, dates, qty):
     return final, invested
 
 
+# 각 습관의 한 줄 쉬운 설명 (결과 화면·리포트에서 점수 옆에 함께 표시).
+TRAIT_DESC = {
+    "성급한 익절": "오른 종목은 서둘러 팔고, 내린 종목은 계속 들고 버티는 습관",
+    "상승주 조기매도": "더 오를 종목을 이익 조금에 미리 파는 습관",
+    "공포 매도": "하락한 날 겁이 나 즉흥적으로 파는 습관",
+    "잦은 매매": "짧게 자주 사고파는 습관",
+    "본전 집착": "산 가격 회복만 기다려 판단이 흐려지는 습관",
+}
+
+
+# 습관별 개인 맞춤 처방: (진단 근거 = 당신의 실제 수치) + (구체적 3단계 규칙).
+# d = prof['detail'] 를 받아 사용자 수치를 문장에 주입한다.
+def _sol_disposition(d) -> str:
+    box = ("특히 지지부진하던 장에서 더 심했습니다. "
+           if d["de_box"] is not None and d["de_box"] > 0 else "")
+    return (f"당신은 오른 종목을 손실 종목보다 먼저 파는 성향이 컸습니다. {box}"
+            f"처방 ①살 때 바로 '팔 목표가격=산 값의 1.15배, 손절 가격=산 값의 "
+            f"0.90배'를 종목마다 적어두기 ②손절 가격에 닿으면 감정 없이 그날 팔기 "
+            f"③이익 종목은 목표가격 전까지 팔지 않기. 다음 검사에선 이 습관 점수를 "
+            f"0에 가깝게 낮추는 게 목표입니다.")
+
+
+def _sol_counter_trend(d) -> str:
+    return (f"쭉 오르던 종목 {d['n_trend']}개 중 {d['trend_sold_in_gain']}개를 "
+            f"조금 이익 났을 때 미리 팔아, 그 뒤 상승분을 놓쳤습니다. "
+            f"처방 ①오르는 종목은 '얼마 벌면 판다' 대신 '가장 높았던 값에서 10% "
+            f"떨어지면 판다'로 관리 ②이익 났다고 파는 게 아니라 오름세가 꺾일 때만 "
+            f"팔기 ③살 때 '이건 오르는 종목'이라고 표시해 두고 따로 관리하기.")
+
+
+def _sol_panic(d) -> str:
+    return (f"전체 매도 {d['n_sells']}번 중 {d['panic_cnt']}번이 '전날 떨어진 종목'을 "
+            f"겁나서 즉흥적으로 판 것이었습니다. "
+            f"처방 ①떨어진 날엔 그날 바로 팔지 않기—하루 기다리기 ②팔고 싶으면 이유를 "
+            f"한 줄 적고 다음 날 아침에만 실행 ③떨어진 날의 매도는 미리 정한 손절 "
+            f"가격에 닿았을 때만 허용. 이 규칙으로 {d['panic_cnt']}번 중 상당수를 "
+            f"막을 수 있습니다.")
+
+
+def _sol_overtrade(d) -> str:
+    return (f"한 종목을 평균 {d['avg_hold']:.1f}주밖에 안 들고 있어 사고파는 게 너무 "
+            f"잦았습니다. "
+            f"처방 ①매매는 '일주일에 한 번 정하는 날'에만 하기 ②사고팔기 전 3가지"
+            f"(오름세가 살아있나? 손절 가격에 닿았나? 목표가격에 닿았나?)를 확인하고 "
+            f"맞을 때만 ③일주일 매매 횟수 상한을 정해 넘으면 그냥 지켜보기. 잦은 "
+            f"매매는 수익보다 수수료와 실수를 키웁니다.")
+
+
+def _sol_anchoring(d) -> str:
+    return (f"매도 {d['n_sells']}번 중 {d['breakeven_cnt']}번이 '산 값 근처(±3%)'에서 "
+            f"나왔습니다. 본전 생각에 매여 있었다는 뜻입니다. "
+            f"처방 ①팔지 말지는 산 값이 아니라 '지금부터 오를까'만 보고 정하기 "
+            f"②차트에서 내가 산 가격 선을 지우고 보기 ③본전 회복을 기다리며 손실을 "
+            f"키우지 않기—산 값은 이미 돌아오지 않는 돈입니다.")
+
+
 SOLUTIONS = {
-    "처분효과": ("진입과 동시에 '목표가·손절가'를 함께 적어두세요. 손실 종목을 "
-              "들고 버티는 대신, 정해둔 손절선에서 기계적으로 끊는 규칙이 "
-              "처분효과를 가장 직접적으로 줄입니다."),
-    "추세 놓침": ("오르는 종목은 '얼마 벌면 판다'(고정 목표가) 대신 추적 손절"
-              "(trailing stop)을 쓰세요. 추세가 살아 있는 한 들고, 고점 대비 "
-              "일정 % 빠질 때만 파는 방식이 승자를 끝까지 태웁니다."),
-    "패닉 매도": ("하락한 날의 즉흥 매도를 막으려면 '쿨다운 규칙'을 두세요. 빨간 "
-              "날엔 당일 매도 금지, 다음 날 미리 정한 기준으로만 판단합니다."),
-    "과잉 매매": ("매매 횟수에 상한을 두세요(예: 주 1회 점검). 잦은 손바뀜은 "
-              "비용과 실수를 늘립니다. 체크리스트를 통과한 경우만 매매합니다."),
-    "본전 집착": ("'본전 생각'을 버리세요. 매도 판단은 매수가가 아니라 '지금 이 "
-              "종목의 앞으로의 전망'으로 합니다. 진입가는 이미 매몰비용입니다."),
+    "성급한 익절": _sol_disposition,
+    "상승주 조기매도": _sol_counter_trend,
+    "공포 매도": _sol_panic,
+    "잦은 매매": _sol_overtrade,
+    "본전 집착": _sol_anchoring,
 }
 
 
 def solution_for(prof: dict) -> list[str]:
     traits = prof["traits"]
+    d = prof.get("detail", {})
     ranked = sorted(traits.items(), key=lambda kv: -kv[1])
     out = []
     for name, score in ranked:
         if score >= 25:
-            out.append(f"[{name} {score:.0f}점] {SOLUTIONS[name]}")
+            out.append(f"[{name} {score:.0f}점] {SOLUTIONS[name](d)}")
     if not out:
-        out.append("뚜렷한 편향이 약합니다. 지금의 규율(손절·보유 원칙)을 "
-                    "유지하세요.")
+        out.append(
+            "뚜렷한 나쁜 습관이 약합니다. 지금의 규율(손절·보유 원칙)을 그대로 "
+            "유지하세요. 다음 검사에서도 이 습관을 지키는 게 목표입니다.")
     return out
